@@ -140,3 +140,8 @@ Robot
 3. Third is up to the developer to edit. A full explanation on how to use ssh is lengthy, here is a playlist explaining how to use it.
 
 [Using SSH to access Raspberry PI](https://www.youtube.com/watch?v=aCGbQB8K8T8&list=PLg8DhjCcwNIUJHBY2gwcLh3A9UxUwOROL)
+
+## Demo Video
+For a visual demonstration of the robot in action, watch the video below:
+
+[106 Robot Demo Video](https://youtu.be/MGX6GOqphaA?si=aR72aIO-O0AAla3-)
