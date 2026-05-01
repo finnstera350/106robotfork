@@ -47,7 +47,7 @@ MQTT_TOPIC_IMU_OUT = "robot/telemetry/imu"
 # ─────────────────────────────────────────────────────────────────────────────
 # CLOUD MQTT Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-CLOUD_MQTT_SERVER   = "192.168.1.140"   # Replace with real IP/hostname
+CLOUD_MQTT_SERVER   = "100.119.46.15"   # Replace with real IP/hostname
 CLOUD_MQTT_PORT     = 1883
 CLOUD_MQTT_USERNAME = None              # Set to your username
 CLOUD_MQTT_PASSWORD = None              # Set to your password
@@ -58,8 +58,10 @@ CLOUD_TOPIC_RAIL    = "cloud/robot/rail"
 CLOUD_TOPIC_PUMP    = "cloud/robot/pump"
 
 # Cloud telemetry topics — Pi publishes robot data back to cloud client
-CLOUD_TOPIC_GPS_OUT  = "cloud/robot/telemetry/gps"
-CLOUD_TOPIC_IMU_OUT  = "cloud/robot/telemetry/imu"
+CLOUD_TOPIC_STATUS   = "cloud/robot/status"
+CLOUD_TOPIC_GPS_OUT  = "cloud/robot/gps"
+CLOUD_TOPIC_CAM_OUT  = "cloud/robot/camera"
+CLOUD_TOPIC_IMU_OUT  = "cloud/robot/imu"
 
 app = Flask(__name__, static_folder='static')
 
@@ -323,7 +325,7 @@ def calculate_heading():
     if heading < 0:
         heading += 360
 
-    return heading
+    return heading, math.degrees(pitch), math.degrees(roll)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # VFan USB GPS — Reads NMEA sentences directly from the serial port.
@@ -433,7 +435,7 @@ def main_loop():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 # Optionally display IMU heading
-                imu_heading = calculate_heading()
+                imu_heading, imu_pitch, imu_roll = calculate_heading()
                 cv2.putText(img, f"IMU Heading: {imu_heading:.2f}", (10, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
@@ -462,22 +464,40 @@ def main_loop():
                 # ─────────────────────────────────────────────────────────────
                 # Publish telemetry to local broker and forward to cloud client
                 if current_lat is not None:
+                    # Formatted as strings to match React frontend requirements
                     gps_payload = json.dumps({
-                        "lat": current_lat,
-                        "lon": current_lon,
-                        "alt": 0.0
+                        "lat": str(current_lat),
+                        "lon": str(current_lon),
+                        "alt": "0.0" # Hardcoded unless your GPS reads altitude
                     })
                     client.publish(MQTT_TOPIC_GPS_OUT, gps_payload)
                     if cloud_client_global and cloud_client_global.is_connected():
                         cloud_client_global.publish(CLOUD_TOPIC_GPS_OUT, gps_payload)
 
+                # Safely check if your IMU.py has Gyroscope reading functions
+                try:
+                    gx, gy, gz = str(IMU.readGYRx()), str(IMU.readGYRy()), str(IMU.readGYRz())
+                except AttributeError:
+                    gx = gy = gz = "0.00"
+
+                # Send nested JSON payload exactly as the frontend expects
                 imu_payload = json.dumps({
-                    "heading": imu_heading,
-                    "timestamp": time.time()
+                    "acc": {"x": str(IMU.readACCx()), "y": str(IMU.readACCy()), "z": str(IMU.readACCz())},
+                    "gyro": {"x": gx, "y": gy, "z": gz},
+                    "roll": str(round(imu_roll, 2)),
+                    "pitch": str(round(imu_pitch, 2)),
+                    "yaw": str(round(imu_heading, 2))
                 })
+                
                 client.publish(MQTT_TOPIC_IMU_OUT, imu_payload)
                 if cloud_client_global and cloud_client_global.is_connected():
                     cloud_client_global.publish(CLOUD_TOPIC_IMU_OUT, imu_payload)
+                
+                # NEW: Publish a plaintext status message for your dashboard UI
+                status_msg = f"Mode: {current_mode} | E-Stop: {'ACTIVE' if e_stop_active else 'Off'}"
+                #client.publish(MQTT_TOPIC_STATUS, status_msg)
+                if cloud_client_global and cloud_client_global.is_connected():
+                    cloud_client_global.publish(CLOUD_TOPIC_STATUS, status_msg)
                 # ─────────────────────────────────────────────────────────────
 
                 # Check for e-stop activation
